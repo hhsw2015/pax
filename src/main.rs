@@ -26,6 +26,8 @@ async fn main() {
     // Check mode for initial log
     if args.host.is_some() {
         info!("Mode: CLI Arguments (Target: {})", args.host.as_ref().unwrap());
+    } else if let Some(ref path) = args.json {
+        info!("Mode: Local JSON (File: {})", path);
     } else {
         info!("Mode: API Fetch (Target: {})", args.api);
     }
@@ -51,6 +53,9 @@ async fn run_session(args: &config::AppArgs) -> anyhow::Result<()> {
     let mut ssh_cfg = if args.host.is_some() {
         // CLI Mode
         config::create_from_args(args)?
+    } else if let Some(ref path) = args.json {
+        // Local JSON Mode
+        config::read_ssh_config_from_file(path)?
     } else {
         // API Mode
         config::fetch_ssh_config(&args.api, args.timeout).await?

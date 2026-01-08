@@ -18,6 +18,10 @@ pub struct AppArgs {
     #[arg(long, env = "PAX_API_URL", default_value = "https://example.com/api/auth.json")]
     pub api: String,
 
+    /// Local JSON file path (Used if --host is not provided)
+    #[arg(long)]
+    pub json: Option<String>,
+
     /// Request timeout in seconds (for API fetch)
     #[arg(long, default_value = "10")]
     pub timeout: u64,
@@ -157,6 +161,27 @@ pub async fn fetch_ssh_config(api_url: &str, timeout_secs: u64) -> Result<SshCon
         Ok(c) => c,
         Err(e) => {
             tracing::error!("Failed to parse JSON. Raw response content:\n{}", text);
+            return Err(anyhow::anyhow!("JSON parse error: {}", e));
+        }
+    };
+
+    Ok(config)
+}
+
+/// Reads and parses SSH config from a local JSON file.
+pub fn read_ssh_config_from_file(path: &str) -> Result<SshConfig> {
+    let expanded_path = expand_tilde(path);
+    let content = std::fs::read_to_string(&expanded_path)
+        .with_context(|| format!("Failed to read JSON file: {:?}", expanded_path))?;
+
+    let config: SshConfig = match serde_json::from_str(&content) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!(
+                "Failed to parse JSON. Raw file content ({}):\n{}",
+                expanded_path.display(),
+                content
+            );
             return Err(anyhow::anyhow!("JSON parse error: {}", e));
         }
     };
