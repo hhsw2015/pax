@@ -82,7 +82,7 @@ Recommended for single servers or replacing `ssh -D`.
 
 | Flag | Env Var | Description |
 | :--- | :--- | :--- |
-| `--api` | `PAX_API_URL` | Remote API URL (Default: `https://example-mock.com/api/auth/`). |
+| `--api` | `PAX_API_URL` | Remote API URL (Default: `https://example.com/api/auth.json`). |
 | `--json` | - | Local JSON file path (Uses API schema). |
 | `--host` | - | Remote Server IP/Host (Triggers CLI Mode). |
 | `--user` | - | Remote SSH User (Default: `root` in CLI Mode). |
