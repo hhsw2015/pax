@@ -12,22 +12,43 @@ use tracing::info;
 
 #[derive(Parser, Debug, Clone)]
 pub struct AppArgs {
-    /// API endpoint URL
-    /// Priority: CLI Flag > Environment Variable > Default Value
-    #[arg(short, long, env = "PAX_API_URL", default_value = "https://example.com/api/auth.json")]
+    // --- Mode 1: API Configuration ---
+
+    /// API endpoint URL (Used if --host is not provided)
+    #[arg(long, env = "PAX_API_URL", default_value = "https://example-mock.com/api/auth/")]
     pub api: String,
+
+    /// Request timeout in seconds (for API fetch)
+    #[arg(long, default_value = "10")]
+    pub timeout: u64,
+
+    // --- Mode 2: Manual Configuration (CLI) ---
+
+    /// Remote Server Host / IP (Enables CLI Mode, ignores API)
+    #[arg(long)]
+    pub host: Option<String>,
+
+    /// Remote SSH User
+    #[arg(long)]
+    pub user: Option<String>,
+
+    /// Remote SSH Port
+    #[arg(long, default_value = "22")]
+    pub ssh_port: String,
+
+    /// SSH Password
+    #[arg(long)]
+    pub password: Option<String>,
+
+    /// Private key file path (Used for both API override and CLI mode)
+    #[arg(short = 'k', long)]
+    pub private_key: Option<String>,
+
+    // --- Common Settings ---
 
     /// Local SOCKS5 port
     #[arg(short, long, default_value = "1080")]
     pub local_port: u16,
-
-    /// Request timeout in seconds
-    #[arg(long, default_value = "10")]
-    pub timeout: u64,
-
-    /// Force use of a local private key file (Overrides API auth)
-    #[arg(short = 'k', long)]
-    pub private_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
@@ -51,7 +72,6 @@ pub struct SshConfig {
     // Optional metadata
     pub region: Option<String>,
 
-    // Maps JSON "ref" to struct "ref_info"
     #[serde(rename = "ref")]
     pub ref_info: Option<String>,
 
@@ -64,26 +84,8 @@ pub struct SshConfig {
 fn default_port() -> String { "22".to_string() }
 fn default_auth_type() -> AuthType { AuthType::Password }
 
-/// Fetches and parses SSH config from the API.
-pub async fn fetch_ssh_config(api_url: &str, timeout_secs: u64) -> Result<SshConfig> {
-    info!("Fetching credentials...");
-
-    let client = Client::builder()
-        .timeout(Duration::from_secs(timeout_secs))
-        .build()?;
-
-    let resp = client.get(api_url).send().await.context("API request failed")?;
-    let text = resp.text().await.context("Failed to get response text")?;
-
-    let config: SshConfig = match serde_json::from_str(&text) {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::error!("Failed to parse JSON. Raw response content:\n{}", text);
-            return Err(anyhow::anyhow!("JSON parse error: {}", e));
-        }
-    };
-
-    // --- Visual Output Block (Uses println! for correct color rendering) ---
+/// Helper: Prints the node information visually.
+pub fn print_node_info(config: &SshConfig) {
     let region_display = config.region.as_deref().unwrap_or("UNK");
 
     println!();
@@ -104,14 +106,58 @@ pub async fn fetch_ssh_config(api_url: &str, timeout_secs: u64) -> Result<SshCon
         println!("{} {}", "  -> Ref :".bold(), r.blue().underline());
     }
     println!();
-    // ---------------------------------------------------------------------
 
     check_expiration(&config.exp_at);
+}
+
+/// Creates SshConfig directly from CLI arguments.
+pub fn create_from_args(args: &AppArgs) -> Result<SshConfig> {
+    let host = args.host.clone().ok_or_else(|| anyhow!("Host is required in CLI mode"))?;
+    let user = args.user.clone().unwrap_or_else(|| "root".to_string());
+
+    let auth_type = if args.private_key.is_some() {
+        AuthType::Key
+    } else {
+        AuthType::Password
+    };
+
+    let config = SshConfig {
+        user,
+        host,
+        port: args.ssh_port.clone(),
+        auth_type,
+        region: Some("Local".to_string()),
+        ref_info: Some("CLI Args".to_string()),
+        password: args.password.clone(),
+        private_key: args.private_key.clone(),
+        exp_at: None,
+    };
 
     Ok(config)
 }
 
-/// Expands "~" to the user's home directory.
+/// Fetches and parses SSH config from the API.
+pub async fn fetch_ssh_config(api_url: &str, timeout_secs: u64) -> Result<SshConfig> {
+    info!("Fetching credentials...");
+
+    let client = Client::builder()
+        .timeout(Duration::from_secs(timeout_secs))
+        .build()?;
+
+    let resp = client.get(api_url).send().await.context("API request failed")?;
+    let text = resp.text().await.context("Failed to get response text")?;
+
+    let config: SshConfig = match serde_json::from_str(&text) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!("Failed to parse JSON. Raw response content:\n{}", text);
+            return Err(anyhow::anyhow!("JSON parse error: {}", e));
+        }
+    };
+
+    Ok(config)
+}
+
 fn expand_tilde(path_str: &str) -> PathBuf {
     if path_str.starts_with("~") {
         if let Some(home) = dirs::home_dir() {
@@ -126,12 +172,8 @@ fn expand_tilde(path_str: &str) -> PathBuf {
     PathBuf::from(path_str)
 }
 
-/// Prepares the private key.
-/// - If input contains "PRIVATE KEY", writes it to a temp file.
-/// - If input is a path, expands "~" and verifies existence.
 pub fn prepare_private_key(key_input: &str) -> Result<(String, Option<NamedTempFile>)> {
     if key_input.contains("PRIVATE KEY") {
-        // Handle raw content (API provided)
         let mut temp_file = NamedTempFile::new()?;
         temp_file.write_all(key_input.as_bytes())?;
 
@@ -146,7 +188,6 @@ pub fn prepare_private_key(key_input: &str) -> Result<(String, Option<NamedTempF
         let path = temp_file.path().to_string_lossy().to_string();
         Ok((path, Some(temp_file)))
     } else {
-        // Handle local path with tilde expansion
         let expanded_path = expand_tilde(key_input);
 
         if expanded_path.exists() && expanded_path.is_file() {
@@ -197,7 +238,6 @@ fn check_expiration(exp_at: &Option<String>) {
                 println!("Remaining: {} hours (Until: {})", hours_left.to_string().red().bold(), date_str);
                 println!("{}", "==========================================\n".yellow());
             } else {
-                // Also use println! for validity to match the visual style of Node info
                 println!("  -> Valid until: {}", date_str.green());
             }
         },

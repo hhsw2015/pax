@@ -22,14 +22,19 @@ async fn main() {
     let args = config::AppArgs::parse();
 
     info!("Starting Pax - SSH SOCKS5 Proxy");
-    info!("API Endpoint: {}", args.api);
+
+    // Check mode for initial log
+    if args.host.is_some() {
+        info!("Mode: CLI Arguments (Target: {})", args.host.as_ref().unwrap());
+    } else {
+        info!("Mode: API Fetch (Target: {})", args.api);
+    }
 
     loop {
         if let Err(e) = run_session(&args).await {
             error!("Session ended: {:?}", e);
 
             // Critical Fix: If interrupted by user (Ctrl+C), exit the process immediately.
-            // This ensures that any background blocking threads (like the SSH runner) are killed.
             if e.to_string().contains("Interrupted by user") {
                 info!("Exiting immediately.");
                 std::process::exit(0);
@@ -42,18 +47,30 @@ async fn main() {
 }
 
 async fn run_session(args: &config::AppArgs) -> anyhow::Result<()> {
-    // 1. Fetch Config
-    let mut ssh_cfg = config::fetch_ssh_config(&args.api, args.timeout).await?;
+    // 1. Determine Source (CLI vs API)
+    let mut ssh_cfg = if args.host.is_some() {
+        // CLI Mode
+        config::create_from_args(args)?
+    } else {
+        // API Mode
+        config::fetch_ssh_config(&args.api, args.timeout).await?
+    };
 
-    // 2. CLI Override
-    if let Some(ref local_key_path) = args.private_key {
-        info!("Overriding auth: Using local private key -> {}", local_key_path);
-        ssh_cfg.auth_type = config::AuthType::Key;
-        ssh_cfg.private_key = Some(local_key_path.clone());
+    // 2. Override for API mode (Optional mixing)
+    // If user provides -k in API mode, we still want to respect it.
+    // In CLI mode, create_from_args already handled this, but re-assigning is harmless.
+    if args.host.is_none() {
+         if let Some(ref local_key_path) = args.private_key {
+            info!("Overriding auth: Using local private key -> {}", local_key_path);
+            ssh_cfg.auth_type = config::AuthType::Key;
+            ssh_cfg.private_key = Some(local_key_path.clone());
+        }
     }
 
-    // 3. Prepare Private Key (Temp file or Local path)
-    // Guard keeps the temp file alive until function exit.
+    // 3. Display Config (Unified visualization)
+    config::print_node_info(&ssh_cfg);
+
+    // 4. Prepare Private Key (Temp file or Local path)
     let _key_guard: Option<tempfile::NamedTempFile>;
 
     if ssh_cfg.auth_type == config::AuthType::Key {
@@ -71,9 +88,8 @@ async fn run_session(args: &config::AppArgs) -> anyhow::Result<()> {
     let port = args.local_port;
     let cfg_clone = ssh_cfg.clone();
 
-    // 4. Run SSH with Signal Handling
+    // 5. Run SSH with Signal Handling
     tokio::select! {
-        // Run SSH in a blocking thread so it doesn't block the async runtime
         res = tokio::task::spawn_blocking(move || {
             runner::start_ssh_process(port, &cfg_clone)
         }) => {
@@ -82,10 +98,8 @@ async fn run_session(args: &config::AppArgs) -> anyhow::Result<()> {
                 Err(e) => Err(anyhow::anyhow!("Join error: {}", e)),
             }
         }
-        // Handle Ctrl+C
         _ = signal::ctrl_c() => {
             info!("Received Ctrl+C, cleaning up...");
-            // Return specific error string to trigger exit in main()
             Err(anyhow::anyhow!("Interrupted by user"))
         }
     }

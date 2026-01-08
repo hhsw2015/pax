@@ -1,19 +1,19 @@
 # Pax - Automated SSH SOCKS5 Proxy
 
-Pax is a lightweight Rust tool designed to **replace manual SSH SOCKS5 commands** (e.g., `ssh -D 1080 ...`). Instead of hardcoding credentials, Pax fetches them dynamically from a remote API, establishes the tunnel, and keeps it alive.
+Pax is a lightweight Rust tool designed to **replace manual SSH SOCKS5 commands** (e.g., `ssh -D 1080 ...`). It can fetch credentials dynamically from a remote API **OR** take them directly from the command line, establishing the tunnel and keeping it alive automatically.
 
 ## Why use Pax?
 
-| **Manual Method** | **Pax** |
+| **Feature** | **Pax** |
 | :--- | :--- |
-| You run `ssh -D 1080 -N -C user@host` | Pax runs this automatically in the background. |
-| Credentials are static or typed manually | Credentials are fetched from a JSON API (Auto-rotate). |
-| Connection drops? You must restart it | **Auto-reconnects** immediately upon failure. |
-| Complex private key management | Handles **Local Keys** (`~/.ssh/...`) & **API Keys** (Raw content). |
+| **Stability** | Detects disconnects (Timeout/EOF) and **auto-reconnects**. |
+| **Dynamic** | Fetches credentials from a JSON API (Auto-rotate). |
+| **Manual** | Can also act as a robust `autossh` alternative via CLI args. |
+| **Keys** | Handles **Local Keys** (`~/.ssh/...`) & **Raw Key Content**. |
 
 ## Features
 
-*   **Dynamic Config**: Fetches Host, User, Port, Password/Key from a URL.
+*   **Versatile Config**: Supports both **Remote API** fetching and **Manual CLI** arguments.
 *   **Environment Friendly**: Supports configuration via **Environment Variables** (`PAX_API_URL`).
 *   **Silent Mode Support**: Compatible with SSH servers that suppress output (`-N` mode), automatically detecting successful connections.
 *   **Expiration Aware**: Visual alerts if the account is expiring soon (<24h).
@@ -21,10 +21,13 @@ Pax is a lightweight Rust tool designed to **replace manual SSH SOCKS5 commands*
 *   **Metadata Display**: Shows server **Region** and **Source Ref** for better tracking.
 
 ![State](./screenshot.png)
-**Display under normal conditions.**
+*Display under normal conditions.*
 
 ![State with datetime exp notify](./screenshot_notify.png)
-**A prominent reminder appears on startup when authentication is about to expire.**
+*A prominent reminder appears on startup when authentication is about to expire.*
+
+![State with cli](./screenshot_local.png)
+*Display under normal conditions with local args*
 
 ## Usage
 
@@ -34,31 +37,50 @@ cargo build --release
 ./target/release/pax
 ```
 
-### 2. Configuration & Arguments
+### 2. Configuration Modes
 
-Pax prioritizes configuration in this order: **CLI Flags > Environment Variables > Default Values**.
+Pax supports two primary modes. If `--host` is provided, it switches to **CLI Mode**. Otherwise, it defaults to **API Mode**.
 
-#### Via Environment Variable (Recommended for Docker/Scripts)
+#### Mode A: API Driven (Default)
+Recommended for managing many dynamic servers.
+
 ```bash
-export PAX_API_URL="https://my-api.com/get-ssh-config"
-./pax
-```
-
-#### Via Command Line Flags
-```bash
-# Default behavior (uses default API or Env Var)
+# Basic (uses default API URL or Env Var)
 ./pax
 
-# Override API endpoint manually
-./pax --api "http://127.0.0.1:8000/config.json"
+# Custom API URL
+./pax --api "https://my-api.com/nodes"
 
-# Force use of a local private key (Overrides API auth)
-# Pax supports tilde expansion (e.g., ~/.ssh/id_rsa)
-./pax -k "~/.ssh/id_rsa"
-
-# Change local SOCKS5 port (Default: 1080)
-./pax --local-port 2080
+# API + Local Key Override
+./pax --api "..." -k "~/.ssh/id_rsa"
 ```
+
+#### Mode B: CLI Arguments (Manual)
+Recommended for single servers or replacing `ssh -D`.
+
+```bash
+# Password Auth
+./pax --host 1.2.3.4 --user root --password "secret123"
+
+# Key Auth
+./pax --host 1.2.3.4 --user root -k "~/.ssh/id_rsa"
+
+# Custom Ports (SSH Port 2022, Local SOCKS 8080)
+./pax --host 1.2.3.4 --ssh-port 2022 --local-port 8080 -k "~/.ssh/key.pem"
+```
+
+## CLI Arguments Reference
+
+| Flag | Env Var | Description |
+| :--- | :--- | :--- |
+| `--api` | `PAX_API_URL` | Remote API URL (Default: `https://example-mock.com/api/auth/`). |
+| `--host` | - | Remote Server IP/Host (Triggers CLI Mode). |
+| `--user` | - | Remote SSH User (Default: `root` in CLI Mode). |
+| `--ssh-port` | - | Remote SSH Port (Default: `22`). |
+| `--password` | - | SSH Password. |
+| `-k`, `--private-key`| - | Path to local private key. |
+| `-l`, `--local-port` | - | Local SOCKS5 Port (Default: `1080`). |
+| `--timeout` | - | Connection/Request timeout in seconds. |
 
 ## API Response Format
 
@@ -118,3 +140,4 @@ The `private_key` field supports **Raw Key Content** (PEM format) OR a **File Pa
 
 ## License
 MIT
+```
