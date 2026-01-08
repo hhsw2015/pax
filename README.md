@@ -20,6 +20,8 @@ Pax is a lightweight Rust tool designed to **replace manual SSH SOCKS5 commands*
 *   **Smart Paths**: Automatically expands `~` to your home directory for private key paths.
 *   **Metadata Display**: Shows server **Region** and **Source Ref** for better tracking.
 
+![State](./screenshot.png)
+
 ## Usage
 
 ### 1. Build & Run
