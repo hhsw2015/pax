@@ -28,6 +28,10 @@ pub fn start_ssh_process(local_port: u16, config: &SshConfig) -> Result<()> {
             debug!("Using private key path: {}", key_path);
             cmd.arg("-i").arg(key_path);
         }
+    } else {
+        // Avoid public key attempts when password auth is expected.
+        cmd.arg("-o").arg("PreferredAuthentications=password,keyboard-interactive")
+           .arg("-o").arg("PubkeyAuthentication=no");
     }
 
     cmd.arg("-p").arg(&config.port)
@@ -47,7 +51,7 @@ pub fn start_ssh_process(local_port: u16, config: &SshConfig) -> Result<()> {
     loop {
         // Watch for specific prompts or errors
         let result = p.expect(Regex(
-            "(?i)password:|enter passphrase|connection refused|timed out|permission denied|authentication failed|denied",
+            "(?i)password[^\\r\\n]*:|enter passphrase|connection refused|timed out|permission denied|authentication failed|denied",
         ));
 
         match result {
@@ -56,7 +60,7 @@ pub fn start_ssh_process(local_port: u16, config: &SshConfig) -> Result<()> {
                 let buf_str = String::from_utf8_lossy(output.before());
 
                 // 1. Password Prompt
-                if match_str.contains("password:") {
+                if match_str.to_lowercase().contains("password") {
                     if config.auth_type == AuthType::Password {
                         if let Some(ref pwd) = config.password {
                             info!("Sending password...");
