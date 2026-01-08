@@ -32,6 +32,8 @@ async fn main() {
         info!("Mode: API Fetch (Target: {})", args.api);
     }
 
+    let mut consecutive_init_failures: u32 = 0;
+
     loop {
         if let Err(e) = run_session(&args).await {
             error!("Session ended: {:?}", e);
@@ -40,6 +42,19 @@ async fn main() {
             if e.to_string().contains("Interrupted by user") {
                 info!("Exiting immediately.");
                 std::process::exit(0);
+            }
+
+            if e.to_string().contains("Init failure:") {
+                consecutive_init_failures += 1;
+                if args.max_retries > 0 && consecutive_init_failures >= args.max_retries {
+                    error!(
+                        "Max init failures reached ({}). Stopping.",
+                        args.max_retries
+                    );
+                    std::process::exit(1);
+                }
+            } else {
+                consecutive_init_failures = 0;
             }
         }
 

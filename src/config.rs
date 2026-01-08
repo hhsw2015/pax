@@ -57,6 +57,10 @@ pub struct AppArgs {
     /// Local SOCKS5 port
     #[arg(short, long, default_value = "1080")]
     pub local_port: u16,
+
+    /// Max consecutive init failures before exiting (0 = infinite)
+    #[arg(long, default_value = "5")]
+    pub max_retries: u32,
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]

@@ -50,6 +50,8 @@ pub fn start_ssh_process(local_port: u16, config: &SshConfig) -> Result<()> {
     let mut password_attempts = 0;
     let max_password_attempts = 3;
 
+    let mut established = false;
+
     loop {
         // Watch for specific prompts or errors
         let result = p.expect(Regex(
@@ -73,7 +75,7 @@ pub fn start_ssh_process(local_port: u16, config: &SshConfig) -> Result<()> {
                             password_attempts += 1;
                             if password_attempts > max_password_attempts {
                                 return Err(anyhow!(
-                                    "Password prompt repeated more than {} times",
+                                    "Init failure: password prompt repeated more than {} times",
                                     max_password_attempts
                                 ));
                             }
@@ -81,11 +83,11 @@ pub fn start_ssh_process(local_port: u16, config: &SshConfig) -> Result<()> {
                             p.send_line(pwd)?;
                             continue; // Continue loop to check if accepted
                         } else {
-                            return Err(anyhow!("Server asked for password but none provided!"));
-                        }
-                    } else {
-                        return Err(anyhow!("Server asked for password, but AuthType is Key."));
+                        return Err(anyhow!("Init failure: server asked for password but none provided"));
                     }
+                } else {
+                    return Err(anyhow!("Init failure: server asked for password, but AuthType is Key"));
+                }
                 }
 
                 // 2. Key Passphrase Prompt
@@ -96,16 +98,16 @@ pub fn start_ssh_process(local_port: u16, config: &SshConfig) -> Result<()> {
                         p.send_line(pwd)?;
                         continue;
                     } else {
-                         return Err(anyhow!("Passphrase required but 'password' field is empty!"));
+                         return Err(anyhow!("Init failure: passphrase required but 'password' field is empty"));
                     }
                 }
 
                 // 3. Explicit Errors
                 if buf_str.contains("Connection refused") || buf_str.contains("timed out") {
-                    return Err(anyhow!("Connection failed (Refused/Timeout)"));
+                    return Err(anyhow!("Init failure: connection failed (Refused/Timeout)"));
                 }
                 if buf_str.contains("denied") {
-                    return Err(anyhow!("Permission denied (Wrong password/key?)"));
+                    return Err(anyhow!("Init failure: permission denied (wrong password/key?)"));
                 }
             },
             Err(expectrl::Error::ExpectTimeout) => {
@@ -115,21 +117,22 @@ pub fn start_ssh_process(local_port: u16, config: &SshConfig) -> Result<()> {
                 if is_process_alive(&mut p) {
                     if is_port_listening(local_port) {
                         info!("Tunnel established (Silent Mode). SOCKS5: 127.0.0.1:{}", local_port);
+                        established = true;
                         break; // Exit the interaction loop, move to monitoring
                     }
                     if start.elapsed() >= max_wait {
                         return Err(anyhow!(
-                            "SSH still initializing; no local listener on port {}",
+                            "Init failure: SSH still initializing; no local listener on port {}",
                             local_port
                         ));
                     }
                     continue;
                 } else {
-                    return Err(anyhow!("SSH process died unexpectedly during initialization."));
+                    return Err(anyhow!("Init failure: SSH process died during initialization"));
                 }
             },
             Err(e) => {
-                return Err(anyhow!("Interaction error: {}", e));
+                return Err(anyhow!("Init failure: interaction error: {}", e));
             }
         }
     }
@@ -141,7 +144,11 @@ pub fn start_ssh_process(local_port: u16, config: &SshConfig) -> Result<()> {
     match p.expect(Eof) {
         Ok(_) => {
             warn!("SSH process exited (EOF).");
-            Err(anyhow!("SSH exited normally"))
+            if established {
+                Err(anyhow!("Disconnected after established tunnel"))
+            } else {
+                Err(anyhow!("Init failure: SSH exited before tunnel established"))
+            }
         }
         Err(e) => Err(anyhow!("Monitor error: {}", e)),
     }
