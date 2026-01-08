@@ -1,7 +1,9 @@
 use crate::config::{SshConfig, AuthType};
 use anyhow::{anyhow, Result};
 use expectrl::{Eof, Regex, Session};
+use std::net::{SocketAddr, TcpStream};
 use std::process::Command;
+use std::time::Duration;
 use tracing::{info, warn, debug};
 
 /// Starts the SSH process using `expectrl`.
@@ -38,11 +40,15 @@ pub fn start_ssh_process(local_port: u16, config: &SshConfig) -> Result<()> {
     // --- INTERACTION PHASE ---
     // We give SSH a few seconds to prompt for password or fail.
     // If it says nothing for 5 seconds but stays alive, we assume success.
-    p.set_expect_timeout(Some(std::time::Duration::from_secs(5)));
+    p.set_expect_timeout(Some(Duration::from_secs(5)));
+    let start = std::time::Instant::now();
+    let max_wait = Duration::from_secs(30);
 
     loop {
         // Watch for specific prompts or errors
-        let result = p.expect(Regex("(?i)password:|Enter passphrase|Connection refused|timed out|denied"));
+        let result = p.expect(Regex(
+            "(?i)password:|enter passphrase|connection refused|timed out|permission denied|authentication failed|denied",
+        ));
 
         match result {
             Ok(output) => {
@@ -87,10 +93,19 @@ pub fn start_ssh_process(local_port: u16, config: &SshConfig) -> Result<()> {
             Err(expectrl::Error::ExpectTimeout) => {
                 // --- SUCCESS CHECK ---
                 // The expect timed out. This means SSH is silent.
-                // If the process is still running, it means the connection is likely established.
+                // Confirm the local port is listening before declaring success.
                 if is_process_alive(&mut p) {
-                    info!("Tunnel established (Silent Mode). SOCKS5: 127.0.0.1:{}", local_port);
-                    break; // Exit the interaction loop, move to monitoring
+                    if is_port_listening(local_port) {
+                        info!("Tunnel established (Silent Mode). SOCKS5: 127.0.0.1:{}", local_port);
+                        break; // Exit the interaction loop, move to monitoring
+                    }
+                    if start.elapsed() >= max_wait {
+                        return Err(anyhow!(
+                            "SSH still initializing; no local listener on port {}",
+                            local_port
+                        ));
+                    }
+                    continue;
                 } else {
                     return Err(anyhow!("SSH process died unexpectedly during initialization."));
                 }
@@ -112,6 +127,11 @@ pub fn start_ssh_process(local_port: u16, config: &SshConfig) -> Result<()> {
         }
         Err(e) => Err(anyhow!("Monitor error: {}", e)),
     }
+}
+
+fn is_port_listening(port: u16) -> bool {
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok()
 }
 
 /// Helper: Checks if the spawned process is still running
