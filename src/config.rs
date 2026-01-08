@@ -5,7 +5,7 @@ use colored::*;
 use reqwest::Client;
 use serde::Deserialize;
 use std::io::Write;
-use std::path::Path;
+use std::path::PathBuf;
 use std::time::Duration;
 use tempfile::NamedTempFile;
 use tracing::info;
@@ -13,7 +13,8 @@ use tracing::info;
 #[derive(Parser, Debug, Clone)]
 pub struct AppArgs {
     /// API endpoint URL
-    #[arg(short, long, default_value = "https://example-mock.com/api/auth/")]
+    /// Priority: CLI Flag > Environment Variable > Default Value
+    #[arg(short, long, env = "PAX_API_URL", default_value = "https://example.com/api/auth.json")]
     pub api: String,
 
     /// Local SOCKS5 port
@@ -41,16 +42,22 @@ pub struct SshConfig {
     pub user: String,
     pub host: String,
 
+    #[serde(default = "default_port")]
+    pub port: String,
+
     #[serde(default = "default_auth_type")]
     pub auth_type: AuthType,
+
+    // Optional metadata
+    pub region: Option<String>,
+
+    // Maps JSON "ref" to struct "ref_info"
+    #[serde(rename = "ref")]
+    pub ref_info: Option<String>,
 
     pub password: Option<String>,
     pub private_key: Option<String>,
 
-    #[serde(default = "default_port")]
-    pub port: String,
-
-    pub comment: Option<String>,
     pub exp_at: Option<String>,
 }
 
@@ -58,7 +65,6 @@ fn default_port() -> String { "22".to_string() }
 fn default_auth_type() -> AuthType { AuthType::Password }
 
 /// Fetches and parses SSH config from the API.
-
 pub async fn fetch_ssh_config(api_url: &str, timeout_secs: u64) -> Result<SshConfig> {
     info!("Fetching credentials...");
 
@@ -68,6 +74,7 @@ pub async fn fetch_ssh_config(api_url: &str, timeout_secs: u64) -> Result<SshCon
 
     let resp = client.get(api_url).send().await.context("API request failed")?;
     let text = resp.text().await.context("Failed to get response text")?;
+
     let config: SshConfig = match serde_json::from_str(&text) {
         Ok(c) => c,
         Err(e) => {
@@ -76,24 +83,55 @@ pub async fn fetch_ssh_config(api_url: &str, timeout_secs: u64) -> Result<SshCon
         }
     };
 
-    info!("Node: {}@{}:{} ({:?})", config.user, config.host, config.port, config.auth_type);
+    // --- Visual Output Block (Uses println! for correct color rendering) ---
+    let region_display = config.region.as_deref().unwrap_or("UNK");
 
-    if let Some(ref cmt) = config.comment {
-        info!("Comment: {}", cmt);
+    println!();
+    println!("{} {}@{}:{}",
+        "  -> Node:".bold(),
+        config.user.green(),
+        config.host.green(),
+        config.port.yellow()
+    );
+
+    println!("{} {} ({:?})",
+        "  -> Info:".bold(),
+        region_display.cyan(),
+        config.auth_type
+    );
+
+    if let Some(ref r) = config.ref_info {
+        println!("{} {}", "  -> Ref :".bold(), r.blue().underline());
     }
+    println!();
+    // ---------------------------------------------------------------------
 
     check_expiration(&config.exp_at);
 
     Ok(config)
 }
 
+/// Expands "~" to the user's home directory.
+fn expand_tilde(path_str: &str) -> PathBuf {
+    if path_str.starts_with("~") {
+        if let Some(home) = dirs::home_dir() {
+            if path_str == "~" {
+                return home;
+            }
+            if path_str.starts_with("~/") || path_str.starts_with("~\\") {
+                 return home.join(&path_str[2..]);
+            }
+        }
+    }
+    PathBuf::from(path_str)
+}
+
 /// Prepares the private key.
 /// - If input contains "PRIVATE KEY", writes it to a temp file.
-/// - If input is a path, verifies existence.
-/// Returns (path_string, Option<TempFileGuard>).
+/// - If input is a path, expands "~" and verifies existence.
 pub fn prepare_private_key(key_input: &str) -> Result<(String, Option<NamedTempFile>)> {
     if key_input.contains("PRIVATE KEY") {
-        // Handle raw content
+        // Handle raw content (API provided)
         let mut temp_file = NamedTempFile::new()?;
         temp_file.write_all(key_input.as_bytes())?;
 
@@ -108,12 +146,13 @@ pub fn prepare_private_key(key_input: &str) -> Result<(String, Option<NamedTempF
         let path = temp_file.path().to_string_lossy().to_string();
         Ok((path, Some(temp_file)))
     } else {
-        // Handle local path
-        let path = Path::new(key_input);
-        if path.exists() && path.is_file() {
-            Ok((key_input.to_string(), None))
+        // Handle local path with tilde expansion
+        let expanded_path = expand_tilde(key_input);
+
+        if expanded_path.exists() && expanded_path.is_file() {
+            Ok((expanded_path.to_string_lossy().to_string(), None))
         } else {
-            Err(anyhow!("Private key file not found: {}", key_input))
+            Err(anyhow!("Private key file not found: {} (Expanded: {:?})", key_input, expanded_path))
         }
     }
 }
@@ -158,7 +197,8 @@ fn check_expiration(exp_at: &Option<String>) {
                 println!("Remaining: {} hours (Until: {})", hours_left.to_string().red().bold(), date_str);
                 println!("{}", "==========================================\n".yellow());
             } else {
-                info!("Valid until: {}", date_str.green());
+                // Also use println! for validity to match the visual style of Node info
+                println!("  -> Valid until: {}", date_str.green());
             }
         },
         None => tracing::warn!("Unknown date format: {}", date_str),

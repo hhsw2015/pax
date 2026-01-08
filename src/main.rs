@@ -9,6 +9,7 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() {
+    // Setup logging
     let filter = EnvFilter::builder()
         .with_default_directive(Level::INFO.into())
         .from_env_lossy();
@@ -26,7 +27,6 @@ async fn main() {
         if let Err(e) = run_session(&args).await {
             error!("Session ended: {:?}", e);
 
-            // Exit immediately if interrupted by user
             if e.to_string().contains("Interrupted by user") {
                 break;
             }
@@ -79,7 +79,6 @@ async fn run_session(args: &config::AppArgs) -> anyhow::Result<()> {
         }
         _ = signal::ctrl_c() => {
             info!("Received Ctrl+C, cleaning up...");
-            // _key_guard drops here, deleting temp file.
             Err(anyhow::anyhow!("Interrupted by user"))
         }
     }
