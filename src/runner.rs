@@ -42,7 +42,7 @@ pub fn start_ssh_process(local_port: u16, config: &SshConfig) -> Result<()> {
 
     loop {
         // Watch for specific prompts or errors
-        let result = p.expect(Regex("password:|Enter passphrase|Connection refused|timed out|denied"));
+        let result = p.expect(Regex("(?i)password:|Enter passphrase|Connection refused|timed out|denied"));
 
         match result {
             Ok(output) => {
