@@ -79,6 +79,7 @@ Recommended for single servers or replacing `ssh -D`.
 | `--ssh-port` | - | Remote SSH Port (Default: `22`). |
 | `--password` | - | SSH Password. |
 | `-k`, `--private-key`| - | Path to local private key. |
+| `--proxy-command` | - | SSH ProxyCommand string (e.g., cloudflared access). |
 | `-l`, `--local-port` | - | Local SOCKS5 Port (Default: `1080`). |
 | `--timeout` | - | Connection/Request timeout in seconds. |
 
@@ -94,6 +95,7 @@ Pax expects the remote URL to return a single JSON object.
   "port": "22",
   "user": "root",
   "password": "my_secret_password",
+  "proxy_command": "/usr/local/bin/cloudflared access ssh --hostname %h",
   "region": "JP",
   "ref": "https://abc.com/source-page",
   "exp_at": "2026-01-16 02:45:03"
@@ -116,6 +118,8 @@ The `private_key` field supports **Raw Key Content** (PEM format) OR a **File Pa
 
   // Optional: Passphrase if the key is encrypted
   "password": "key_passphrase",
+  // Optional: ProxyCommand string for ssh
+  "proxy_command": "/usr/local/bin/cloudflared access ssh --hostname %h",
 
   "region": "US",
   "ref": "https://abc.com/server-list",
@@ -132,6 +136,7 @@ The `private_key` field supports **Raw Key Content** (PEM format) OR a **File Pa
 | `ref` | `string` | (Optional) Source reference URL for display. |
 | `private_key`| `string` | (Optional) Raw key content or local file path. |
 | `password` | `string` | (Optional) SSH Password or Key Passphrase. |
+| `proxy_command` | `string` | (Optional) SSH ProxyCommand string. |
 | `exp_at` | `string` | (Optional) Expiration date (RFC3339 or "Y-m-d H:M:S"). |
 
 ## Requirements
@@ -140,4 +145,3 @@ The `private_key` field supports **Raw Key Content** (PEM format) OR a **File Pa
 
 ## License
 MIT
-
