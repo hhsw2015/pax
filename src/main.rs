@@ -9,13 +9,14 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() {
-    // Setup logging
+    // Setup logging with ANSI color support
     let filter = EnvFilter::builder()
         .with_default_directive(Level::INFO.into())
         .from_env_lossy();
 
     tracing_subscriber::fmt()
         .with_env_filter(filter)
+        .with_ansi(true)
         .init();
 
     let args = config::AppArgs::parse();
@@ -27,8 +28,11 @@ async fn main() {
         if let Err(e) = run_session(&args).await {
             error!("Session ended: {:?}", e);
 
+            // Critical Fix: If interrupted by user (Ctrl+C), exit the process immediately.
+            // This ensures that any background blocking threads (like the SSH runner) are killed.
             if e.to_string().contains("Interrupted by user") {
-                break;
+                info!("Exiting immediately.");
+                std::process::exit(0);
             }
         }
 
@@ -69,6 +73,7 @@ async fn run_session(args: &config::AppArgs) -> anyhow::Result<()> {
 
     // 4. Run SSH with Signal Handling
     tokio::select! {
+        // Run SSH in a blocking thread so it doesn't block the async runtime
         res = tokio::task::spawn_blocking(move || {
             runner::start_ssh_process(port, &cfg_clone)
         }) => {
@@ -77,8 +82,10 @@ async fn run_session(args: &config::AppArgs) -> anyhow::Result<()> {
                 Err(e) => Err(anyhow::anyhow!("Join error: {}", e)),
             }
         }
+        // Handle Ctrl+C
         _ = signal::ctrl_c() => {
             info!("Received Ctrl+C, cleaning up...");
+            // Return specific error string to trigger exit in main()
             Err(anyhow::anyhow!("Interrupted by user"))
         }
     }
