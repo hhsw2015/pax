@@ -39,7 +39,7 @@ cargo build --release
 
 ### 2. Configuration Modes
 
-Pax supports two primary modes. If `--host` is provided, it switches to **CLI Mode**. Otherwise, it defaults to **API Mode**.
+Pax supports three primary modes. If `--host` is provided, it switches to **CLI Mode**. Otherwise, it uses `--json` if provided, or defaults to **API Mode**.
 
 #### Mode A: API Driven (Default)
 Recommended for managing many dynamic servers.
@@ -55,7 +55,15 @@ Recommended for managing many dynamic servers.
 ./pax --api "..." -k "~/.ssh/id_rsa"
 ```
 
-#### Mode B: CLI Arguments (Manual)
+#### Mode B: Local JSON (File)
+Uses the same schema as the API response, but reads from a local file.
+
+```bash
+# Read local JSON config
+./pax --json "./config.json"
+```
+
+#### Mode C: CLI Arguments (Manual)
 Recommended for single servers or replacing `ssh -D`.
 
 ```bash
@@ -74,6 +82,7 @@ Recommended for single servers or replacing `ssh -D`.
 | Flag | Env Var | Description |
 | :--- | :--- | :--- |
 | `--api` | `PAX_API_URL` | Remote API URL (Default: `https://example-mock.com/api/auth/`). |
+| `--json` | - | Local JSON file path (Uses API schema). |
 | `--host` | - | Remote Server IP/Host (Triggers CLI Mode). |
 | `--user` | - | Remote SSH User (Default: `root` in CLI Mode). |
 | `--ssh-port` | - | Remote SSH Port (Default: `22`). |
