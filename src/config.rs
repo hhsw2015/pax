@@ -44,6 +44,10 @@ pub struct AppArgs {
     #[arg(short = 'k', long)]
     pub private_key: Option<String>,
 
+    /// ProxyCommand string passed to ssh (e.g. cloudflared access)
+    #[arg(long)]
+    pub proxy_command: Option<String>,
+
     // --- Common Settings ---
 
     /// Local SOCKS5 port
@@ -77,6 +81,7 @@ pub struct SshConfig {
 
     pub password: Option<String>,
     pub private_key: Option<String>,
+    pub proxy_command: Option<String>,
 
     pub exp_at: Option<String>,
 }
@@ -130,6 +135,7 @@ pub fn create_from_args(args: &AppArgs) -> Result<SshConfig> {
         ref_info: Some("CLI Args".to_string()),
         password: args.password.clone(),
         private_key: args.private_key.clone(),
+        proxy_command: args.proxy_command.clone(),
         exp_at: None,
     };
 

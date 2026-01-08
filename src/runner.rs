@@ -17,6 +17,10 @@ pub fn start_ssh_process(local_port: u16, config: &SshConfig) -> Result<()> {
        .arg("-o").arg("ServerAliveInterval=15")
        .arg("-o").arg("ConnectTimeout=10");
 
+    if let Some(ref proxy) = config.proxy_command {
+        cmd.arg("-o").arg(format!("ProxyCommand={}", proxy));
+    }
+
     if config.auth_type == AuthType::Key {
         if let Some(ref key_path) = config.private_key {
             debug!("Using private key path: {}", key_path);
