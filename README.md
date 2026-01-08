@@ -16,6 +16,7 @@ Pax is a lightweight Rust tool designed to **replace manual SSH SOCKS5 commands*
 *   **Versatile Config**: Supports both **Remote API** fetching and **Manual CLI** arguments.
 *   **Environment Friendly**: Supports configuration via **Environment Variables** (`PAX_API_URL`).
 *   **Silent Mode Support**: Compatible with SSH servers that suppress output (`-N` mode), automatically detecting successful connections.
+*   **Password Prompt Support**: Handles `keyboard-interactive` password prompts (e.g., `Password for user@host:`).
 *   **Expiration Aware**: Visual alerts if the account is expiring soon (<24h).
 *   **Smart Paths**: Automatically expands `~` to your home directory for private key paths.
 *   **Metadata Display**: Shows server **Region** and **Source Ref** for better tracking.
