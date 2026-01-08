@@ -47,6 +47,8 @@ pub fn start_ssh_process(local_port: u16, config: &SshConfig) -> Result<()> {
     p.set_expect_timeout(Some(Duration::from_secs(5)));
     let start = std::time::Instant::now();
     let max_wait = Duration::from_secs(30);
+    let mut password_attempts = 0;
+    let max_password_attempts = 3;
 
     loop {
         // Watch for specific prompts or errors
@@ -61,8 +63,20 @@ pub fn start_ssh_process(local_port: u16, config: &SshConfig) -> Result<()> {
 
                 // 1. Password Prompt
                 if match_str.to_lowercase().contains("password") {
+                    if buf_str.to_lowercase().contains("denied")
+                        || buf_str.to_lowercase().contains("authentication failed")
+                    {
+                        return Err(anyhow!("Permission denied (Wrong password/key?)"));
+                    }
                     if config.auth_type == AuthType::Password {
                         if let Some(ref pwd) = config.password {
+                            password_attempts += 1;
+                            if password_attempts > max_password_attempts {
+                                return Err(anyhow!(
+                                    "Password prompt repeated more than {} times",
+                                    max_password_attempts
+                                ));
+                            }
                             info!("Sending password...");
                             p.send_line(pwd)?;
                             continue; // Continue loop to check if accepted
