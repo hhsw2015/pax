@@ -82,7 +82,7 @@ Recommended for single servers or replacing `ssh -D`.
 
 | Flag | Env Var | Description |
 | :--- | :--- | :--- |
-| `--api` | `PAX_API_URL` | Remote API URL (Default: `https://example.com/api/auth.json`). |
+| `--api` | `PAX_API_URL` | Remote API URL (Default: `https://example-mock.com/api/auth/`). |
 | `--json` | - | Local JSON file path (Uses API schema). |
 | `--host` | - | Remote Server IP/Host (Triggers CLI Mode). |
 | `--user` | - | Remote SSH User (Default: `root` in CLI Mode). |
@@ -92,6 +92,7 @@ Recommended for single servers or replacing `ssh -D`.
 | `--proxy-command` | - | SSH ProxyCommand string (e.g., cloudflared access). |
 | `-l`, `--local-port` | - | Local SOCKS5 Port (Default: `1080`). |
 | `--timeout` | - | Connection/Request timeout in seconds. |
+| `--max-retries` | - | Max consecutive init failures before exit (0 = infinite). |
 
 ## API Response Format
 
